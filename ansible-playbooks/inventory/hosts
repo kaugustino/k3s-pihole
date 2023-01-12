@@ -1,0 +1,11 @@
+[master]
+raspberrypi1
+
+[nodes]
+raspberrypi2
+raspberrypi3
+raspberrypi4
+
+[all:vars]
+ansible_user=pi
+ansible_ssh_private_key_file=~/.ssh/pihole_id_rsa

@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pihole
+  namespace: pihole
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: pihole
+  template:
+    metadata:
+      labels:
+        app: pihole
+    spec:
+      containers:
+        - name: pihole
+          image: pihole/pihole:latest
+          ports:
+            - name: pihole-http
+              containerPort: 80
+              hostIP: 0.0.0.0
+              hostPort: 31234
+            - name: pihole-dns
+              containerPort: 53
+              hostIP: 0.0.0.0
+              hostPort: 53
+              protocol: UDP
+          env:
+            - name: TZ
+              value: 'America/Chicago'
+            - name: WEBPASSWORD
+              value: 'hole31234'
+            - name: DNSMASQ_LISTENING
+              value: 'all'
+
+#---
+#apiVersion: v1
+#kind: Service
+#metadata:
+#  name: pihole-svc
+#  namespace: pihole
+#spec:
+#  type: NodePort
+#  selector:
+#    app: pihole
+#  ports:
+#    - name: pihole-dashboard
+#      nodePort: 31234
+#      port: 8080
+#      targetPort: pihole-http
+#      protocol: TCP
+#    - name: pihole-dns-uclient
+#      nodePort: 31153
+#      port: 5333
+#      targetPort: pihole-dns
+#      protocol: UDP
+#    - name: pihole-dns-tclient
+#      nodePort: 31153
+#      port: 5333
+#      targetPort: pihole-dns
+#      protocol: TCP

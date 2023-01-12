@@ -1,0 +1,97 @@
+---
+
+- hosts: master
+  gather_facts: false
+  become: true
+
+  # all steps follow this link
+  # https://github.com/pi-hole/docker-pi-hole#installing-on-ubuntu-or-fedora
+  tasks:
+    # need to disable DNSStubListener running on port 53
+    # to allow the port for pi-hole FTL service
+    # default dns port for devices
+    - name: disable DNSStubListener
+      ansible.builtin.lineinfile:
+        path: /etc/systemd/resolved.conf
+        regexp: '^#DNSStubListener='
+        line: 'DNSStubListener=no'
+
+    - name: check /etc/resolv.conf
+      ansible.builtin.stat:
+        path: /etc/resolv.conf
+      register: resolv_conf
+
+    - name: backup /etc/resolv.conf
+      ansible.builtin.copy:
+        src: /etc/resolv.conf
+        dest: /etc/resolv.conf.bak
+        remote_src: true
+      when: resolv_conf.stat.isLnk is defined and resolv_conf.stat.isLnk == false
+
+    - name: delete /etc/resolv.conf
+      ansible.builtin.file:
+        path: /etc/resolv.conf
+        state: absent
+      when: resolv_conf.stat.isLnk is defined and resolv_conf.stat.isLnk == false
+
+    - name: create symbolic link to new resolv.conf file
+      ansible.builtin.file:
+        src: /run/systemd/resolve/resolv.conf
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        state: link
+      notify:
+        - restart systemd-resolved
+
+  handlers:
+    - name: restart systemd-resolved
+      ansible.builtin.service:
+        name: systemd-resolved
+        state: restarted
+
+
+- hosts: all
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: add firewall rules for pihole http and dns ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+      loop:
+        - port: 31234
+          proto: tcp
+        - port: 53
+          proto: tcp
+        - port: 53
+          proto: udp
+
+
+- hosts: master
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: create k3s deployment dir
+      ansible.builtin.file:
+        path: /home/pi/k3s/pihole
+        state: directory
+        recurse: true
+        owner: pi
+        group: pi
+        mode: '0755'
+
+    - name: copy deployment file onto server
+      ansible.builtin.copy:
+        src: pihole_deployment.yml
+        dest: /home/pi/k3s/pihole
+        owner: pi
+        group: pi
+        mode: '0644'
+        backup: true
+
+    - name: run pihole deployment
+      ansible.builtin.shell: kubectl apply -f /home/pi/k3s/pihole/pihole_deployment.yml

@@ -1,0 +1,72 @@
+---
+
+- hosts: all
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: add memory cgroup setting to boot cmdline.txt
+      ansible.builtin.lineinfile:
+        path: /boot/cmdline.txt
+        regexp: '^(.*rootwait)$'
+        line: '\1 cgroup_memory=1 cgroup_enable=memory'
+        backrefs: true
+      register: add_cgroup_config
+
+    - name: reboot if change to cmdline.txt
+      ansible.builtin.reboot:
+      when: add_cgroup_config.changed
+
+
+- hosts: master
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: check k3s service exists
+      ansible.builtin.stat:
+        path: /etc/systemd/system/k3s.service
+      register: service
+
+    - name: install k3s
+      ansible.builtin.shell: curl -sfL https://get.k3s.io | sh -
+      when: not service.stat.exists
+
+    - name: check k3s service is running
+      ansible.builtin.service:
+        name: k3s
+        state: started
+
+    - name: grab k3s worker node token
+      ansible.builtin.shell: cat /var/lib/rancher/k3s/server/node-token
+      register: node_token
+
+    - name: set k3s token
+      ansible.builtin.set_fact:
+        k3s_token: "{{ node_token.stdout }}"
+
+    - name: open port to allow worker node connection
+      community.general.ufw:
+        rule: allow
+        port: '6443'
+        proto: tcp
+
+
+- hosts: nodes
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: check k3s service exists
+      ansible.builtin.stat:
+        path: /etc/systemd/system/k3s.service
+      register: service
+
+    - name: install k3s
+      ansible.builtin.shell: curl -sfL https://get.k3s.io | K3S_URL=https://{{ groups['master'][0] }}:6443 K3S_TOKEN={{ hostvars[groups['master'][0]]['k3s_token'] }} sh -
+      when: not service.stat.exists
+
+    - name: check k3s service is running
+      ansible.builtin.service:
+        name: k3s-agent
+        state: started
